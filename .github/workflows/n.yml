@@ -18,117 +18,84 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # --- [ 1.0 基础设施自愈: 释放 80GB+ 存储空间 ] ---
-      - name: 1.01 空间治理: 移除 .NET 核心运行时
-        run: sudo rm -rf /usr/share/dotnet
-      - name: 1.02 空间治理: 移除 Android SDK 全量包
-        run: sudo rm -rf /usr/local/lib/android
-      - name: 1.03 空间治理: 移除 Haskell 编译器环境
-        run: sudo rm -rf /opt/ghc
-      - name: 1.04 空间治理: 移除 CodeQL 静态分析工具
-        run: sudo rm -rf /opt/hostedtoolcache/CodeQL
-      - name: 1.05 空间治理: 移除 Boost C++ 库文件
-        run: sudo rm -rf /usr/local/share/boost
-      - name: 1.06 空间治理: 移除 Swift 开发环境
-        run: sudo rm -rf /usr/share/swift
-      - name: 1.07 空间治理: 移除 GraalVM 虚拟机环境
-        run: sudo rm -rf /usr/local/graalvm
-      - name: 1.08 空间治理: 移除 Microsoft SQL Server 驱动
-        run: sudo rm -rf /usr/local/sqlpackage
-      - name: 1.09 空间治理: 移除系统自带 PHP 模块
-        run: sudo rm -rf /usr/share/php*
-      - name: 1.10 空间治理: 移除 Chromium 浏览器残留
-        run: sudo rm -rf /usr/local/share/chromium
-      - name: 1.11 空间治理: 移除 Firefox Gecko 驱动
-        run: sudo rm -rf /usr/local/share/gecko-driver
-      - name: 1.12 系统瘦身: 卸载 Azure CLI 与 GCP SDK
-        run: sudo apt-get purge -y azure-cli google-cloud-sdk powershell || true
-      - name: 1.13 空间治理: 执行 Docker 镜像暴力清理
-        run: sudo docker image prune -a -f
-      - name: 1.14 空间治理: 执行 APT 依赖库自动缩减
-        run: sudo apt-get autoremove -y
-      - name: 1.15 空间治理: 清空 APT 本地二进制缓存
-        run: sudo apt-get clean
+      - name: 1.01 空间清理: 移除冗余运行时环境
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /usr/local/graalvm /usr/local/sqlpackage /usr/share/php*
+          sudo apt-get purge -y azure-cli google-cloud-sdk powershell && sudo apt-get autoremove -y && sudo apt-get clean
+          sudo docker image prune -a -f
 
-      # --- [ 1.2 内存矩阵部署: 申请 32GB 交换空间防止 OOM ] ---
-      - name: 1.21 内存扩展: 申请 32GB 交换文件
-        run: sudo fallocate -l 32G /swapfile
-      - name: 1.22 内存扩展: 配置安全权限掩码
-        run: sudo chmod 600 /swapfile
-      - name: 1.23 内存扩展: 执行 SWAP 格式化
-        run: sudo mkswap /swapfile
-      - name: 1.24 内存扩展: 实时激活交换空间
-        run: sudo swapon /swapfile
+      - name: 1.21 内存扩展: 部署 32GB 交换阵列
+        run: |
+          sudo fallocate -l 32G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
 
       # --- [ 1.5 工具链与 Repo 环境初始化 ] ---
       - name: 1.51 基础环境: 检出当前仓库
         uses: actions/checkout@v4
         with:
           path: main_repo
-      - name: 1.52 权限锚定: 建立私有工具存储路径
-        run: mkdir -p $HOME/bin
-      - name: 1.53 权限锚定: 获取 AOSP 官方 Repo 脚本
-        run: curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
-      - name: 1.54 权限锚定: 注入全局可执行权限
-        run: chmod a+x $HOME/bin/repo
-      - name: 1.55 权限锚定: 强制刷新系统 PATH 变量
-        run: echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: 1.52 权限锚定: 部署 AOSP Repo 引导程序
+        run: |
+          mkdir -p $HOME/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+          chmod a+x $HOME/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
 
       - name: 1.61 编译依赖: 部署全量工业级构建套件
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bc bison flex build-essential libssl-dev libelf-dev lz4 liblz4-tool zstd libzstd-dev rsync zip pahole libxml2-utils python3
 
-      # --- [ 2.0 源码高并发同步: 针对 Pineapple 平台优化 ] ---
-      - name: 2.11 错误预防: 配置 Git 机器人身份与缓冲区
+      # --- [ 2.0 源码同步逻辑 ] ---
+      - name: 2.11 错误预防: 配置 Git 机器人身份
         run: |
           git config --global http.sslVerify false
           git config --global user.email "fusion@phantom.re"
           git config --global user.name "PhantomBot"
-          git config --global http.postBuffer 1048576000
-      - name: 2.21 目录预设: 建立 Manifest 本地镜像源
-        run: mkdir -p ${{ env.WORKSPACE_DIR }}/local_manifest_repo
+
       - name: 2.31 清单注入: 初始化 Git 仓库结构
         run: |
+          mkdir -p ${{ env.WORKSPACE_DIR }}/local_manifest_repo
           cd ${{ env.WORKSPACE_DIR }}/local_manifest_repo && git init -q
           cp -af ../../main_repo/*.xml default.xml
           git add . && git commit -m "init" -q
+
       - name: 2.41 执行同步: 启动高并发原子同步
         run: |
           cd ${{ env.WORKSPACE_DIR }}
           $HOME/bin/repo init -u ./local_manifest_repo -b master --depth=1 --quiet
           $HOME/bin/repo sync -c -j$(nproc) --no-tags --no-clone-bundle --force-sync --quiet
-      - name: 2.51 结构修复: 强制补齐 OPLUS 厂商私有路径
+
+      - name: 2.51 结构修复: 强制补齐 OPLUS 路径
         run: |
           mkdir -p ${{ env.WORKSPACE_DIR }}/kernel_platform/vendor/oplus/kernel/prebuilt/
           touch ${{ env.WORKSPACE_DIR }}/kernel_platform/vendor/oplus/kernel/prebuilt/vendorsetup.sh
 
-      # --- [ 3.0 深度内核魔改: 性能与算法增强注入 ] ---
+      # --- [ 3.0 深度内核魔改: 性能与算法增强 ] ---
       - name: 3.01 补丁前置: 获取 AOSP GKI 底层配置
         run: curl -LSs ${{ env.URL_GKI_CONFIG }} -o ${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig
 
-      # 3.1 模块: BBG 防格机算法 (硬件级拦截)
       - name: 3.11 [BBG] 算法增强: 分区拦截器逻辑注入
         run: |
           UFS_CORE="${{ env.K_COMMON_DIR }}/drivers/ufs/core/ufshcd.c"
           sed -i '/ufshcd_erase/i \
-          /* BBG Anti-Brick Algorithm */ \
           if (partition_name && (strstr(partition_name, "persist") || strstr(partition_name, "efs") || \
-              strstr(partition_name, "modem") || strstr(partition_name, "nvram"))) { \
-              pr_crit("PHANTOM: Wipe attempt blocked on vital partition: %s\\n", partition_name); \
-              return -EPERM; \
-          }' $UFS_CORE
-          echo "CONFIG_SECURITY_BBG_ANTIBRICK=y" >> ${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig
+              strstr(partition_name, "modem") || strstr(partition_name, "nvram"))) return -EPERM;' $UFS_CORE
 
-      # 3.2 模块: 性能算法增强 (PELT & EEVDF)
       - name: 3.21 [PELT] 算法增强: 缩短负载半衰期为 16ms
         run: |
           PELT_H="${{ env.K_COMMON_DIR }}/kernel/sched/pelt.h"
           [ -f "$PELT_H" ] && sed -i 's/#define LOAD_AVG_PERIOD.*/#define LOAD_AVG_PERIOD 16/g' $PELT_H
+
       - name: 3.22 [SCHED] 算法增强: 压缩 EEVDF 调度时延
         run: |
           FAIR_SCHED="${{ env.K_COMMON_DIR }}/kernel/sched/fair.c"
           sed -i 's/unsigned int sysctl_sched_min_granularity = .*/unsigned int sysctl_sched_min_granularity = 300000ULL;/g' $FAIR_SCHED
           sed -i 's/unsigned int sysctl_sched_latency = .*/unsigned int sysctl_sched_latency = 1500000ULL;/g' $FAIR_SCHED
+
       - name: 3.23 [HZ] 性能特调: 注入 1000Hz 全时采样
         run: |
           CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
@@ -136,78 +103,55 @@ jobs:
           echo "CONFIG_HZ_1000=y" >> $CONF
           echo "CONFIG_HZ=1000" >> $CONF
 
-      # 3.3 模块: 内存管理与 ZRAM
-      - name: 3.31 [MEM] 算法增强: 开启 MGLRU 多代回收
+      - name: 3.31 [MEM] 算法增强: 开启 MGLRU 与 LZ4 ZRAM
         run: |
           CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
           sed -i 's/^# CONFIG_LRU_GEN is not set/CONFIG_LRU_GEN=y/' $CONF
           sed -i 's/^# CONFIG_LRU_GEN_ENABLED is not set/CONFIG_LRU_GEN_ENABLED=y/' $CONF
-      - name: 3.32 [MEM] 算法增强: 注入 LZ4 ZRAM 压缩
-        run: sed -i 's/^# CONFIG_ZRAM_DEF_COMP_LZ4 is not set/CONFIG_ZRAM_DEF_COMP_LZ4=y/' ${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig
+          sed -i 's/^# CONFIG_ZRAM_DEF_COMP_LZ4 is not set/CONFIG_ZRAM_DEF_COMP_LZ4=y/' $CONF
 
-      # 3.4 模块: 三星 SSG I/O 调速器
       - name: 3.41 [I/O] 闪存优化: UFS 4.0 预读窗口压缩
         run: |
           sed -i 's/500 \* HZ \/ 1000/40 \* HZ \/ 1000/g' ${{ env.K_COMMON_DIR }}/block/mq-deadline.c
           echo "CONFIG_BLOCK_SSG_OPTIMIZE=y" >> ${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig
 
-      # 3.5 模块: 网络算法扩展
       - name: 3.51 [NET] 网络增强: 部署 BBRv3 源码
-        run: curl -LSs ${{ env.URL_BBR3_SRC }} -o ${{ env.K_COMMON_DIR }}/net/ipv4/tcp_bbr.c
-      - name: 3.52 [NET] 网络增强: 开启 TCP 快速连接与 FQ-Codel
         run: |
+          curl -LSs ${{ env.URL_BBR3_SRC }} -o ${{ env.K_COMMON_DIR }}/net/ipv4/tcp_bbr.c
           CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
           sed -i 's/^# CONFIG_TCP_CONG_BBR is not set/CONFIG_TCP_CONG_BBR=y/' $CONF
           echo 'CONFIG_DEFAULT_TCP_CONG="bbr"' >> $CONF
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> $CONF
 
-      # --- [ 4.0 配置格式修复: 解决 Savedefconfig 匹配错误 ] ---
-      - name: 4.01 格式修复: 执行工业级排序与去重
+      # --- [ 4.0 配置格式修复 ] ---
+      - name: 4.01 格式修复: Defconfig 排序对齐
         run: |
           CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
           sort -u $CONF -o $CONF
 
-      # --- [ 5.0 核心编译过程: 执行 Pineapple 生产脚本 ] ---
-      - name: 5.11 编译审计: 注入跳过校验变量
-        run: |
-          echo "SKIP_DEFCONFIG_VALIDATION=true" >> $GITHUB_ENV
-          echo "SKIP_ABI_CHECK=true" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_USER=Phantom-Fusion" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_HOST=Atomic-Compute" >> $GITHUB_ENV
+      # --- [ 5.0 核心生产构建 ] ---
       - name: 5.21 启动构建: 执行 OPLUS 官方构建脚本
         run: |
           cd ${{ env.WORKSPACE_DIR }}
           export PATH=$HOME/bin:$PATH
+          echo "KBUILD_BUILD_USER=Phantom" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=Algo-Fusion" >> $GITHUB_ENV
           chmod +x kernel_platform/oplus/build/oplus_build_kernel.sh
           ./kernel_platform/oplus/build/oplus_build_kernel.sh pineapple gki
 
-      # --- [ 5.3 产物分发与 AnyKernel3 原子级封装 ] ---
-      - name: 5.31 产物捕获: 自动化检索内核镜像
+      # --- [ 5.3 产物分发与 AnyKernel3 极致封装 ] ---
+      - name: 5.31 产物捕获与 AnyKernel3 封装
         run: |
           cd ${{ env.WORKSPACE_DIR }}
           mkdir -p ${{ env.OUT_DIR }}
           find . -name "Image" -type f -size +15M -not -path "*AK3*" -exec cp -af {} ${{ env.OUT_DIR }}/ \;
-      - name: 5.32 产物捕获: 检索 DTB 与 Vendor_Boot
-        run: |
-          cd ${{ env.WORKSPACE_DIR }}
           find . \( -name "dtbo.img" -o -name "vendor_boot.img" -o -name "dtb" \) -exec cp -af {} ${{ env.OUT_DIR }}/ \;
-
-      - name: 5.41 最终封装: 检出 AK3 并适配平板指纹
-        run: |
-          cd ${{ env.WORKSPACE_DIR }}
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3 -q
           cp -af ${{ env.OUT_DIR }}/* AK3/
           sed -i 's/device.name1=.*/device.name1=OnePlusPadPro/g' AK3/anykernel.sh
-      - name: 5.42 最终封装: 注入安装 Banner 并打包
-        run: |
-          AK_SH="${{ env.WORKSPACE_DIR }}/AK3/anykernel.sh"
-          sed -i '/ui_print " "/i ui_print "----------------------------";' $AK_SH
-          sed -i '/ui_print " "/i ui_print "   PHANTOM FINAL FUSION     ";' $AK_SH
-          sed -i '/ui_print " "/i ui_print "   ALGO ENHANCED v26.0      ";' $AK_SH
-          sed -i '/ui_print " "/i ui_print "----------------------------";' $AK_SH
-          cd ${{ env.WORKSPACE_DIR }}/AK3 && zip -r9 ../../Phantom_Fusion_V26.zip *
+          cd AK3 && zip -r9 ../../Phantom_Fusion_V26.zip *
 
-      - name: 6.01 发布: 上传产物至 Artifacts
+      - name: 6.01 发布产物
         uses: actions/upload-artifact@v4
         with:
           name: PadPro-V26-Final-Fusion
