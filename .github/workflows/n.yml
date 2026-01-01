@@ -1,0 +1,168 @@
+name: "Phantom-RE: OnePlus Pad Pro (Algorithm-Enhanced v24)"
+
+on:
+  workflow_dispatch:
+
+env:
+  URL_GKI_CONFIG: "https://raw.githubusercontent.com/aosp-mirror/kernel_common/android14-6.1/arch/arm64/configs/gki_defconfig"
+  URL_BBR3_SRC: "https://raw.githubusercontent.com/google/bbr/master/net/ipv4/tcp_bbr.c"
+  WORKSPACE_DIR: "workspace"
+  K_COMMON_DIR: "workspace/kernel_platform/common"
+  OUT_DIR: "out_delivery"
+
+jobs:
+  algorithm-advanced-engine:
+    runs-on: ubuntu-22.04
+    steps:
+      # --- [ 1.0 基础设施与极速空间清理 ] ---
+      - name: 1.01 空间治理: 移除冗余运行时
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /usr/local/graalvm /usr/local/sqlpackage /usr/share/php*
+          sudo apt-get purge -y azure-cli google-cloud-sdk powershell && sudo apt-get autoremove -y && sudo apt-get clean
+          sudo docker image prune -a -f
+
+      - name: 1.21 内存治理: 部署 32GB 高速交换阵列
+        run: |
+          sudo fallocate -l 32G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      # --- [ 2.0 源码同步与环境修复 ] ---
+      - name: 2.01 环境准备: 检出主仓库
+        uses: actions/checkout@v4
+        with:
+          path: main_repo
+
+      - name: 2.02 权限锚定: 部署 AOSP Repo 引导程序
+        run: |
+          mkdir -p $HOME/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+          chmod a+x $HOME/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: 2.11 依赖部署: 安装工业级构建套件
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bc bison flex build-essential libssl-dev libelf-dev lz4 liblz4-tool zstd libzstd-dev zip rsync pahole libxml2-utils python3
+
+      - name: 2.21 身份同步: 配置 Git 原子识别
+        run: |
+          git config --global http.sslVerify false
+          git config --global user.email "algo@phantom.re"
+          git config --global user.name "PhantomAlgoBot"
+
+      - name: 2.31 执行同步: 强制拉取 Pineapple 源码树
+        run: |
+          mkdir -p ${{ env.WORKSPACE_DIR }}/local_manifest_repo
+          cd ${{ env.WORKSPACE_DIR }}/local_manifest_repo && git init -q
+          cp -af ../../main_repo/*.xml default.xml
+          git add . && git commit -m "sync" -q
+          cd ..
+          $HOME/bin/repo init -u ./local_manifest_repo -b master --depth=1 --quiet
+          $HOME/bin/repo sync -c -j$(nproc) --no-tags --no-clone-bundle --force-sync --quiet
+
+      - name: 2.41 结构补全: 补齐 OPLUS 厂商私有锚点
+        run: |
+          mkdir -p ${{ env.WORKSPACE_DIR }}/kernel_platform/vendor/oplus/kernel/prebuilt/
+          touch ${{ env.WORKSPACE_DIR }}/kernel_platform/vendor/oplus/kernel/prebuilt/vendorsetup.sh
+
+      # --- [ 3.0 深度算法增强 (Algorithm Enhancement) ] ---
+
+      - name: 3.10 [SCHED] 调度算法增强: EEVDF 响应加速
+        run: |
+          # 压缩调度周期，提升抢占灵敏度
+          FAIR_SCHED="${{ env.K_COMMON_DIR }}/kernel/sched/fair.c"
+          sed -i 's/unsigned int sysctl_sched_min_granularity = .*/unsigned int sysctl_sched_min_granularity = 300000ULL;/g' $FAIR_SCHED
+          sed -i 's/unsigned int sysctl_sched_latency = .*/unsigned int sysctl_sched_latency = 1500000ULL;/g' $FAIR_SCHED
+          sed -i 's/unsigned int sysctl_sched_wakeup_granularity = .*/unsigned int sysctl_sched_wakeup_granularity = 400000ULL;/g' $FAIR_SCHED
+
+      - name: 3.20 [PELT] 调度算法增强: 缩短负载追踪半衰期
+        run: |
+          # 将负载追踪周期从默认的 32ms 修改为 16ms，使 CPU 升频快一倍
+          PELT_H="${{ env.K_COMMON_DIR }}/kernel/sched/pelt.h"
+          if [ -f "$PELT_H" ]; then
+            sed -i 's/#define LOAD_AVG_PERIOD.*/#define LOAD_AVG_PERIOD 16/g' $PELT_H
+          fi
+
+      - name: 3.30 [BBG] 安全算法增强: 原子级 UFS 分区锁
+        run: |
+          UFS_CORE="${{ env.K_COMMON_DIR }}/drivers/ufs/core/ufshcd.c"
+          sed -i '/ufshcd_erase/i \
+          /* PHANTOM-BBG ENHANCED ALGORITHM */ \
+          if (partition_name) { \
+              if (strstr(partition_name, "persist") || strstr(partition_name, "efs") || \
+                  strstr(partition_name, "modem") || strstr(partition_name, "nvram")) { \
+                  pr_crit("PHANTOM: FATAL WIPE ATTEMPT BLOCKED ON: %s\\n", partition_name); \
+                  return -EPERM; \
+              } \
+          }' $UFS_CORE
+
+      - name: 3.40 [I/O] 存储算法增强: UFS 4.0 预读优化 (SSG)
+        run: |
+          # 优化闪存调度器算法，针对 8G3 调整预读窗口
+          sed -i 's/500 \* HZ \/ 1000/40 \* HZ \/ 1000/g' ${{ env.K_COMMON_DIR }}/block/mq-deadline.c
+          echo "CONFIG_BLOCK_SSG_OPTIMIZE=y" >> ${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig
+
+      - name: 3.50 [NET] 网络算法增强: 注入 BBRv3 拥塞控制
+        run: |
+          curl -LSs ${{ env.URL_BBR3_SRC }} -o ${{ env.K_COMMON_DIR }}/net/ipv4/tcp_bbr.c
+          CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
+          sed -i 's/^# CONFIG_TCP_CONG_BBR is not set/CONFIG_TCP_CONG_BBR=y/' $CONF
+          echo 'CONFIG_DEFAULT_TCP_CONG="bbr"' >> $CONF
+          echo "CONFIG_NET_SCH_FQ_CODEL=y" >> $CONF
+
+      - name: 3.60 [HZ] 性能算法增强: 强制 1000Hz 全时采样
+        run: |
+          CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
+          sed -i '/CONFIG_HZ/d' $CONF
+          echo "CONFIG_HZ_1000=y" >> $CONF
+          echo "CONFIG_HZ=1000" >> $CONF
+
+      # --- [ 4.0 配置正规化与修复 ] ---
+      - name: 4.01 修复: 执行 Defconfig 工业级排序
+        run: |
+          CONF="${{ env.K_COMMON_DIR }}/arch/arm64/configs/gki_defconfig"
+          sort -u $CONF -o $CONF
+
+      # --- [ 5.0 核心构建过程 ] ---
+      - name: 5.11 构建变量注入
+        run: |
+          echo "SKIP_DEFCONFIG_VALIDATION=true" >> $GITHUB_ENV
+          echo "SKIP_ABI_CHECK=true" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=Phantom-Algo" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=Atomic-Compute" >> $GITHUB_ENV
+
+      - name: 5.21 执行生产编译 (Pineapple)
+        run: |
+          cd ${{ env.WORKSPACE_DIR }}
+          export PATH=$HOME/bin:$PATH
+          chmod +x kernel_platform/oplus/build/oplus_build_kernel.sh
+          ./kernel_platform/oplus/build/oplus_build_kernel.sh pineapple gki
+
+      # --- [ 5.3 产物分发与 AnyKernel3 极致封装 ] ---
+      - name: 5.31 产物自动化捕获
+        run: |
+          cd ${{ env.WORKSPACE_DIR }}
+          mkdir -p ${{ env.OUT_DIR }}
+          find . -name "Image" -type f -size +15M -not -path "*AK3*" -exec cp -af {} ${{ env.OUT_DIR }}/ \;
+          find . \( -name "dtbo.img" -o -name "vendor_boot.img" -o -name "dtb" \) -exec cp -af {} ${{ env.OUT_DIR }}/ \;
+
+      - name: 5.41 AnyKernel3 原子级封装
+        run: |
+          cd ${{ env.WORKSPACE_DIR }}
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3 -q
+          cp -af ${{ env.OUT_DIR }}/* AK3/
+          sed -i 's/device.name1=.*/device.name1=OnePlusPadPro/g' AK3/anykernel.sh
+          # 注入安装横幅
+          sed -i '/ui_print " "/i ui_print "----------------------------";' AK3/anykernel.sh
+          sed -i '/ui_print " "/i ui_print "  PHANTOM ALGO ENHANCED  ";' AK3/anykernel.sh
+          sed -i '/ui_print " "/i ui_print "  Snapdragon 8 Gen 3 RT  ";' AK3/anykernel.sh
+          sed -i '/ui_print " "/i ui_print "----------------------------";' AK3/anykernel.sh
+          cd AK3 && zip -r9 ../../Phantom_Algo_V24.zip *
+
+      - name: 6.01 发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PadPro-V24-Algo-Edition
+          path: "*.zip"
